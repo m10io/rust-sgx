@@ -4,21 +4,32 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#![doc(html_logo_url = "https://edp.fortanix.com/img/docs/edp-logo.svg",
-       html_favicon_url = "https://edp.fortanix.com/favicon.ico",
-       html_root_url = "https://edp.fortanix.com/docs/api/")]
+#![doc(
+    html_logo_url = "https://edp.fortanix.com/img/docs/edp-logo.svg",
+    html_favicon_url = "https://edp.fortanix.com/favicon.ico",
+    html_root_url = "https://edp.fortanix.com/docs/api/"
+)]
 
-#[cfg(unix)] #[macro_use]
+#[cfg(unix)]
+#[macro_use]
 extern crate nix;
 #[macro_use]
 extern crate failure_derive;
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
+#[cfg(windows)]
+extern crate winapi;
+#[macro_use]
+extern crate lazy_static;
 
+#[cfg(windows)]
+pub mod enclaveapi;
 mod generic;
-#[cfg(unix)] pub mod isgx;
+#[cfg(unix)]
+pub mod isgx;
 pub mod sgx_enclave_common;
-#[cfg(windows)] pub mod enclaveapi;
+pub mod sim;
 
 use std::fmt::Debug;
 use std::os::raw::c_void;
