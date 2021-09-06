@@ -8,12 +8,12 @@ use std::io::Error as IoError;
 use std::ptr;
 use std::sync::Arc;
 
-use abi::{Attributes, Einittoken, Miscselect, SecinfoFlags, PageType, Sigstruct};
-use sgxs_crate::loader;
-use sgxs_crate::sgxs::{MeasEAdd, MeasECreate, PageChunks, SgxsRead};
+use sgx_isa::{Attributes, Einittoken, Miscselect, PageType, SecinfoFlags, Sigstruct};
+use sgxs::loader;
+use sgxs::sgxs::{MeasEAdd, MeasECreate, PageChunks, SgxsRead};
 
+use crate::generic::{self, EinittokenError, EnclaveLoad, Mapping};
 use crate::{MappingInfo, Tcs};
-use generic::{self, EinittokenError, EnclaveLoad, Mapping};
 
 use super::{Enclave, SIMULATED_ENCLAVES};
 
@@ -32,6 +32,7 @@ impl EinittokenError for Error {
 }
 
 impl EnclaveLoad for InnerDevice {
+    type MapData = ();
     type Error = Error;
 
     fn new(
@@ -58,6 +59,7 @@ impl EnclaveLoad for InnerDevice {
             base: ptr as u64,
             size: ecreate.size,
             tcss: vec![],
+            mapdata: (),
         };
 
         // TODO: measure
@@ -102,17 +104,24 @@ impl EnclaveLoad for InnerDevice {
     }
 
     fn init(
-        mapping: &Mapping<Self>,
+        mapping: &mut Mapping<Self>,
         _sigstruct: &Sigstruct,
         _einittoken: Option<&Einittoken>,
     ) -> Result<(), Self::Error> {
         // TODO: measure
 
-        SIMULATED_ENCLAVES.lock().unwrap().insert(mapping.base, Enclave {
-            base: mapping.base,
-            size: mapping.size,
-            tcss: mapping.tcss.iter().map(|&a| (a, Default::default())).collect()
-        });
+        SIMULATED_ENCLAVES.lock().unwrap().insert(
+            mapping.base,
+            Enclave {
+                base: mapping.base,
+                size: mapping.size,
+                tcss: mapping
+                    .tcss
+                    .iter()
+                    .map(|&a| (a, Default::default()))
+                    .collect(),
+            },
+        );
 
         Ok(())
     }
@@ -140,7 +149,8 @@ impl Simulator {
                     inner: Arc::new(InnerDevice {}),
                     einittoken_provider: None,
                 },
-            }.build(),
+            }
+            .build(),
         }
     }
 }

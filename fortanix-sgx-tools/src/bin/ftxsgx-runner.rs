@@ -17,14 +17,15 @@ use failure::{Error, ResultExt};
 use libc::{c_int, c_void, siginfo_t};
 #[cfg(unix)]
 use nix::sys::signal;
-#[cfg(unix)]
-use sgxs_loaders::isgx::Device as IsgxDevice;
 #[cfg(windows)]
 use sgxs_loaders::enclaveapi::Sgx as IsgxDevice;
+#[cfg(unix)]
+use sgxs_loaders::isgx::Device as IsgxDevice;
 
 use clap::{App, Arg};
+use sgxs_loaders::sim::Simulator;
 
-arg_enum!{
+arg_enum! {
     #[derive(PartialEq, Debug)]
     #[allow(non_camel_case_types)]
     pub enum Signature {
@@ -42,42 +43,50 @@ fn catch_sigbus() {
         }
 
         let hdl = signal::SigHandler::SigAction(handle_bus);
-        let sig_action = signal::SigAction::new(hdl, signal::SaFlags::SA_RESETHAND, signal::SigSet::empty());
+        let sig_action =
+            signal::SigAction::new(hdl, signal::SaFlags::SA_RESETHAND, signal::SigSet::empty());
         signal::sigaction(signal::SIGBUS, &sig_action).unwrap();
     }
 }
 
 fn main() -> Result<(), Error> {
     let args = App::new("ftxsgx-runner")
+        .arg(Arg::with_name("file").required(true))
         .arg(
-            Arg::with_name("file")
-                .required(true)
+            Arg::with_name("signature")
+                .short("s")
+                .long("signature")
+                .required(false)
+                .takes_value(true)
+                .possible_values(&Signature::variants()),
         )
-        .arg(Arg::with_name("signature")
-            .short("s")
-            .long("signature")
-            .required(false)
-            .takes_value(true)
-            .possible_values(&Signature::variants()))
-        .arg(Arg::with_name("enclave-args")
-            .long_help("Arguments passed to the enclave. \
+        .arg(
+            Arg::with_name("enclave-args")
+                .long_help(
+                    "Arguments passed to the enclave. \
                 Note that this is not an appropriate channel for passing \
-                secrets or security configurations to the enclave.")
-            .multiple(true))
+                secrets or security configurations to the enclave.",
+                )
+                .multiple(true),
+        )
         .get_matches();
 
     let file = args.value_of("file").unwrap();
 
-    let mut device = IsgxDevice::new()
-        .context("While opening SGX device")?
-        .einittoken_provider(AesmClient::new())
-        .build();
-
     let mut enclave_builder = EnclaveBuilder::new(file.as_ref());
 
-    match args.value_of("signature").map(|v| v.parse().expect("validated")) {
-        Some(Signature::coresident) => { enclave_builder.coresident_signature().context("While loading coresident signature")?; }
-        Some(Signature::dummy) => { enclave_builder.dummy_signature(); },
+    match args
+        .value_of("signature")
+        .map(|v| v.parse().expect("validated"))
+    {
+        Some(Signature::coresident) => {
+            enclave_builder
+                .coresident_signature()
+                .context("While loading coresident signature")?;
+        }
+        Some(Signature::dummy) => {
+            enclave_builder.dummy_signature();
+        }
         None => (),
     }
 
@@ -85,12 +94,36 @@ fn main() -> Result<(), Error> {
         enclave_builder.args(enclave_args);
     }
 
-    let enclave = enclave_builder.build(&mut device).context("While loading SGX enclave")?;
+    if std::env::var("SGX_MODE").unwrap_or_default() == "SIM" {
+        let mut device = Simulator::new();
 
-    #[cfg(unix)] catch_sigbus();
+        let enclave = enclave_builder
+            .build(&mut device)
+            .context("While loading SGX enclave")?;
 
-    enclave.run().map_err(|e| {
-        eprintln!("Error while executing SGX enclave.\n{}", e);
-        std::process::exit(-1)
-    })
+        #[cfg(unix)]
+        catch_sigbus();
+
+        enclave.run().map_err(|e| {
+            eprintln!("Error while executing SGX enclave.\n{}", e);
+            std::process::exit(-1)
+        })
+    } else {
+        let mut device = IsgxDevice::new()
+            .context("While opening SGX device")?
+            .einittoken_provider(AesmClient::new())
+            .build();
+
+        let enclave = enclave_builder
+            .build(&mut device)
+            .context("While loading SGX enclave")?;
+
+        #[cfg(unix)]
+        catch_sigbus();
+
+        enclave.run().map_err(|e| {
+            eprintln!("Error while executing SGX enclave.\n{}", e);
+            std::process::exit(-1)
+        })
+    }
 }
