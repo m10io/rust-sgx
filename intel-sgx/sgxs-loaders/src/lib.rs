@@ -23,9 +23,13 @@ extern crate winapi;
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+extern crate bitflags;
+
+mod generic;
+
 #[cfg(windows)]
 pub mod enclaveapi;
-mod generic;
 #[cfg(unix)]
 pub mod isgx;
 pub mod sgx_enclave_common;
