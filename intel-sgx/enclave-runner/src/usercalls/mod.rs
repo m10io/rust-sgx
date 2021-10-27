@@ -21,7 +21,6 @@ use failure::{self, bail};
 use fnv::FnvHashMap;
 use futures::future::{poll_fn, Either, Future, FutureExt};
 use futures::lock::Mutex;
-use futures::StreamExt;
 use lazy_static::lazy_static;
 #[cfg(unix)]
 use libc::*;
@@ -31,7 +30,6 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc as async_mpsc;
 use tokio::sync::Semaphore;
-use tokio_stream::Stream;
 
 use fortanix_sgx_abi::*;
 use ipc_queue::{self, DescriptorGuard, Identified, QueueEvent};
@@ -146,7 +144,7 @@ impl AsyncRead for Stdin {
 
         lazy_static::lazy_static! {
             static ref STDIN: Mutex<AsyncStdin> = {
-                let (mut tx, rx) = async_mpsc::channel(8);
+                let (tx, rx) = async_mpsc::channel(8);
                 thread::spawn(move || {
                     let mut buf = [0u8; BUF_SIZE];
                     while let Ok(len) = io::stdin().read(&mut buf) {
@@ -454,7 +452,7 @@ impl AsyncListenerContainer {
 
 impl AsyncListener for tokio::net::TcpListener {
     fn poll_accept(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context,
         local_addr: Option<&mut String>,
         peer_addr: Option<&mut String>,
@@ -1151,7 +1149,7 @@ impl EnclaveState {
             Err(EnclaveAbort::IndefiniteWait) | Err(EnclaveAbort::Secondary) | Ok(_) => false,
         };
 
-        let mut rt = tokio::runtime::Builder::new_current_thread()
+        let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("failed to create tokio Runtime");
